@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/mvdschee/panamax"
 publish = false
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 reqwest = { version = "0.13.5", features = ["blocking"] }
