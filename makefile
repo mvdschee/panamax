@@ -1,5 +1,29 @@
+# Local mirror for trying panamax end to end: only the crates in LOCK, no rustup.
+LOCAL := .local/mirror
+LOCAL_PORT := 8282
+LOCK ?= Cargo.lock
+
+local: local-sync local-serve
+
+local-sync:
+	@test -f $(LOCAL)/mirror.toml || cargo run -q -- init --ignore-rustup $(LOCAL)
+	@sed -i.bak 's|^base_url = .*|base_url = "http://localhost:$(LOCAL_PORT)/crates"|' $(LOCAL)/mirror.toml && rm $(LOCAL)/mirror.toml.bak
+	cargo run -- sync $(LOCAL) --cargo-lock $(LOCK)
+
+local-serve:
+	cargo run -- serve $(LOCAL) --port $(LOCAL_PORT)
+
+# fetch the crates in LOCK through the running local mirror, with a throwaway cargo home.
+# --config beats ~/.cargo/config.toml, which cargo also finds by walking up from here.
+local-check:
+	@rm -rf .local/cargo-home
+	CARGO_HOME=$(abspath .local/cargo-home) cargo fetch --locked \
+		--manifest-path $(dir $(abspath $(LOCK)))Cargo.toml \
+		--config 'source.local.registry="sparse+http://localhost:$(LOCAL_PORT)/index/"' \
+		--config 'source.crates-io.replace-with="local"'
+
 dev:
-	watchexec -q -c -w src -w templates -w static --exts rs,html,css,js --restart "cargo run -- serve ./.local/mirror"
+	watchexec -q -c -w src -w templates -w static --exts rs,html,css,js --restart "cargo run -- serve $(LOCAL) --port $(LOCAL_PORT)"
 
 check:
 	cargo clippy --all-targets -- -D warnings

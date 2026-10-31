@@ -366,7 +366,7 @@ pub(crate) fn vendor_path_to_mirror_entries(
 			let path = entry.as_ref().unwrap().path();
 			if path.file_name() == Some(OsStr::new("Cargo.toml")) {
 				let s = fs::read_to_string(entry.unwrap().path()).unwrap();
-				let crate_toml = s.parse::<toml::Value>().unwrap();
+				let crate_toml = toml::Value::Table(s.parse::<toml::Table>().unwrap());
 				if let toml::Value::Table(crate_f) = crate_toml {
 					let name = crate_f["package"]["name"].to_string().replace('\"', "");
 					let version = crate_f["package"]["version"].to_string().replace('\"', "");
@@ -389,7 +389,7 @@ pub(crate) fn cargo_lock_to_mirror_entries(
 	if let Some(cargo_lock_filepath) = &cargo_lock_filepath {
 		if cargo_lock_filepath.is_file() {
 			let s = fs::read_to_string(cargo_lock_filepath).unwrap();
-			let cargo_lock = s.parse::<toml::Value>().unwrap();
+			let cargo_lock = toml::Value::Table(s.parse::<toml::Table>().unwrap());
 			if let toml::Value::Table(global) = cargo_lock {
 				let packages_array = &global["package"];
 
@@ -421,5 +421,21 @@ pub(crate) fn cargo_lock_to_mirror_entries(
 		} else {
 			eprintln!("{:?} is not a Cargo.lock!", cargo_lock_filepath);
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn cargo_lock_entries_from_own_lockfile() {
+		let lock = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+		let mut entries = vec![];
+		cargo_lock_to_mirror_entries(&mut entries, Some(&lock));
+
+		let serde = entries.iter().find(|e| e.name == "serde").expect("serde is a dependency");
+		assert!(!serde.vers.contains('"'));
+		assert_eq!(serde.cksum.as_ref().map(String::len), Some(64));
 	}
 }
