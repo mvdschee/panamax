@@ -23,7 +23,7 @@ pub enum MirrorError {
     Git(#[from] git2::Error),
 
     #[error("TOML deserialization error: {0:?}")]
-    Parse(#[from] toml_edit::de::Error),
+    Parse(#[from] toml::de::Error),
 
     #[error("Config file error: {0}")]
     Config(String),
@@ -97,7 +97,7 @@ pub fn create_mirror_toml(path: &Path, ignore_rustup: bool) -> Result<bool, Mirr
 
     // Read the defautlt toml, edit if required, using toml_edit to keep format
     let config = include_str!("mirror.default.toml");
-    let mut config = config.parse::<toml_edit::Document>()?;
+    let mut config = config.parse::<toml_edit::DocumentMut>()?;
 
     if ignore_rustup {
         config["rustup"]["sync"] = toml_edit::value(false);
@@ -111,7 +111,7 @@ pub fn create_mirror_toml(path: &Path, ignore_rustup: bool) -> Result<bool, Mirr
 }
 
 pub fn load_mirror_toml(path: &Path) -> Result<Config, MirrorError> {
-    Ok(toml_edit::easy::from_str(&fs::read_to_string(
+    Ok(toml::from_str(&fs::read_to_string(
         path.join("mirror.toml"),
     )?)?)
 }
@@ -379,7 +379,7 @@ pub(crate) async fn verify(
 
     // Getting crates.sync config state
     let crates_config = config.crates.as_ref();
-    let sync = crates_config.map_or(false, |crate_config| crate_config.sync);
+    let sync = crates_config.is_some_and(|crate_config| crate_config.sync);
 
     // Determining number of steps
     let steps = if dry_run || !sync { 1 } else { 2 };

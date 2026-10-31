@@ -80,6 +80,13 @@ pub async fn serve(path: PathBuf, socket_addr: SocketAddr, tls_paths: Option<Tls
                             "Could not retrieve rustup platforms.".to_string(),
                         ))
                     })
+                    .and_then(|template| {
+                        template.render().map(warp::reply::html).map_err(|_| {
+                            warp::reject::custom(ServeError::Other(
+                                "Could not render index page.".to_string(),
+                            ))
+                        })
+                    })
             }
         },
     );

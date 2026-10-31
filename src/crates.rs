@@ -245,7 +245,7 @@ pub async fn sync_crates_files(
         changed_crates.append(&mut mirror_entries);
     }
 
-    let tasks = futures::stream::iter(changed_crates.into_iter())
+    let tasks = futures::stream::iter(changed_crates)
         .map(|c| {
             let client = client.clone();
             // Duplicate variables used in the async closure.
@@ -385,8 +385,8 @@ pub(crate) fn vendor_path_to_mirror_entries(
             let path = entry.as_ref().unwrap().path();
             if path.file_name() == Some(OsStr::new("Cargo.toml")) {
                 let s = fs::read_to_string(entry.unwrap().path()).unwrap();
-                let crate_toml = s.parse::<toml_edit::easy::Value>().unwrap();
-                if let toml_edit::easy::Value::Table(crate_f) = crate_toml {
+                let crate_toml = s.parse::<toml::Value>().unwrap();
+                if let toml::Value::Table(crate_f) = crate_toml {
                     let name = crate_f["package"]["name"].to_string().replace('\"', "");
                     let version = crate_f["package"]["version"].to_string().replace('\"', "");
                     mirror_entries.push(CrateEntry {
@@ -408,13 +408,13 @@ pub(crate) fn cargo_lock_to_mirror_entries(
     if let Some(cargo_lock_filepath) = &cargo_lock_filepath {
         if cargo_lock_filepath.is_file() {
             let s = fs::read_to_string(cargo_lock_filepath).unwrap();
-            let cargo_lock = s.parse::<toml_edit::easy::Value>().unwrap();
-            if let toml_edit::easy::Value::Table(global) = cargo_lock {
+            let cargo_lock = s.parse::<toml::Value>().unwrap();
+            if let toml::Value::Table(global) = cargo_lock {
                 let packages_array = &global["package"];
 
-                if let toml_edit::easy::Value::Array(packages) = packages_array {
+                if let toml::Value::Array(packages) = packages_array {
                     packages.iter().for_each(|package| {
-                        if let toml_edit::easy::Value::Table(package) = package {
+                        if let toml::Value::Table(package) = package {
                             // filter out non crates-io crates
                             if let Some(source) = package.get("source") {
                                 let source = source.to_string().replace('\"', "");

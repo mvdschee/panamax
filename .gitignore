@@ -1,4 +1,8 @@
-/target
+target/
+.env
+.DS_Store
 **/*.rs.bk
 .idea/
-.direnv/
+
+# personal notes, docs and decisions, kept out of the public repo
+.local/

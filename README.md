@@ -1,34 +1,31 @@
 # Panamax
 
-[![crates.io](https://img.shields.io/crates/v/panamax.svg)](https://crates.io/crates/panamax)
-![Docker Image Version (latest semver)](https://img.shields.io/docker/v/panamaxrs/panamax?label=docker&sort=semver)
-
 ![image](https://user-images.githubusercontent.com/1247908/132435079-b703bd5d-c139-4a73-818f-51746353b3ea.png)
 
 Panamax is a tool to mirror the Rust and crates.io repositories, for offline usage of `rustup` and `cargo`.
 
+This is a fork of [panamax-rs/panamax](https://github.com/panamax-rs/panamax), which is no longer actively maintained.
+
 ## Installation
 
-Panamax is itself available on crates.io, and can be installed via:
+This fork is not published on crates.io. Install it from git:
 
 ```
-$ cargo install --locked panamax
+$ cargo install --locked --git https://github.com/mvdschee/panamax
 ```
 
 Alternatively, you can clone this repository and `cargo build` or `cargo run` within it.
 
-## Usage
-
 ## Docker
 
-Panamax is available as a docker image, so you can run:
+Panamax is available as a docker image on GHCR, so you can run:
 
 ```
-$ docker run --rm -it -v /path/to/mirror/:/mirror --user $(id -u) panamaxrs/panamax init /mirror
+$ docker run --rm -it -v /path/to/mirror/:/mirror --user $(id -u) ghcr.io/mvdschee/panamax init /mirror
 (Modify /path/to/mirror/mirror.toml as needed)
-$ docker run --rm -it -v /path/to/mirror/:/mirror --user $(id -u) panamaxrs/panamax sync /mirror
+$ docker run --rm -it -v /path/to/mirror/:/mirror --user $(id -u) ghcr.io/mvdschee/panamax sync /mirror
 (Once synced, serve the mirror)
-$ docker run --rm -it -v /path/to/mirror/:/mirror --user $(id -u) -p8080:8080 panamaxrs/panamax serve /mirror
+$ docker run --rm -it -v /path/to/mirror/:/mirror --user $(id -u) -p8080:8080 ghcr.io/mvdschee/panamax serve /mirror
 ```
 
 Alternatively, you can run panamax in a bare-metal environment like below.
@@ -87,7 +84,12 @@ then a panamax command can parse the created directory and only grab those crate
 ```
 # Only grab crates needed for panamax, as an example
 $ cargo vendor
-$ panamax sync my-mirror vendor
+$ panamax sync my-mirror --vendor-path vendor
+```
+
+A `Cargo.lock` works as well, without vendoring first:
+```
+$ panamax sync my-mirror --cargo-lock Cargo.lock
 ```
 
 ## Server
@@ -101,9 +103,14 @@ Running HTTP on [::]:8080
 
 The server's index page provides all the instructions needed on how to set up a Rust client that uses this mirror.
 
-If you would prefer having these instructions elsewhere, the rest of this README will describe the setup process in more detail.
+To serve over HTTPS, pass a certificate and key. The default port then becomes 8443:
 
-Additionally, if you would prefer hosting a server with nginx, there is a sample nginx configuration in the repository, at `nginx.sample.conf`.
+```
+$ panamax serve my-mirror --cert-path cert.pem --key-path key.pem
+Running TLS on [::]:8443
+```
+
+If you would prefer having these instructions elsewhere, the rest of this README will describe the setup process in more detail.
 
 ## Configuring `rustup` and `cargo`
 
@@ -136,14 +143,16 @@ This will let you install `rustup` the similarly following the steps from https:
 
 ### Configuring `cargo`
 
-`Cargo` also needs to be configured to point to the mirror. This can be done by adding the following lines to `~/.cargo/config` (creating the file if it doesn't exist):
+`Cargo` also needs to be configured to point to the mirror. This can be done by adding the following lines to `~/.cargo/config.toml` (creating the file if it doesn't exist):
 
 ```
 [source.my-mirror]
-registry = "http://panamax.internal/crates.io-index"
+registry = "sparse+http://panamax.internal/index/"
 [source.crates-io]
 replace-with = "my-mirror"
 ```
+
+This uses the sparse index, which is cargo's default protocol. To use the git index instead, set `registry = "http://panamax.internal/git/crates.io-index"`.
 
 `Cargo` should now be pointing to the correct location to use the mirror.
 
@@ -172,6 +181,14 @@ Second, you'll need to set an http proxy in your `~/.gitconfig`, like so:
 ```
 
 With these two parameters set, Panamax should work through an HTTP proxy.
+
+## Development
+
+```
+$ make check     # clippy, fmt and tests
+$ make dev       # serve ./.local/mirror, restarting on changes (needs watchexec)
+$ make release   # tag the version in Cargo.toml and push it, which publishes the image
+```
 
 ## License
 

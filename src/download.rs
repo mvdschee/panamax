@@ -42,6 +42,11 @@ pub async fn download_string(
         .await?)
 }
 
+/// Lowercase hex string of a digest.
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Append a string to a path.
 pub fn append_to_path(path: &Path, suffix: &str) -> PathBuf {
     let mut new_path = path.as_os_str().to_os_string();
@@ -142,7 +147,7 @@ async fn one_download(
             let text = http_res.text().await?;
             fs::write(
                 forbidden_path,
-                format!("Server returned {}: {}", status, &text),
+                format!("Server returned {}: {}", status, text),
             )?;
             return Err(DownloadError::NotFound {
                 status: status.as_u16(),
@@ -159,7 +164,7 @@ async fn one_download(
         }
     }
 
-    let f_hash = format!("{:x}", sha256.finalize());
+    let f_hash = to_hex(&sha256.finalize());
 
     if let Some(h) = hash {
         if f_hash == h {
@@ -205,7 +210,7 @@ pub async fn download(
                 sha256.update(&buf[..n]);
             }
 
-            let f_hash = format!("{:x}", sha256.finalize());
+            let f_hash = to_hex(&sha256.finalize());
             if h == f_hash {
                 // Calculated hash matches specified hash.
                 return Ok(());

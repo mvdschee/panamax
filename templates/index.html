@@ -25,15 +25,15 @@ source ~/.bashrc</pre>
         <div class="copy-container">
             <pre>mkdir -p ~/.cargo
 
-cat &lt;&lt;EOT > ~/.cargo/config
-[source.panamax]
-registry = "{{ host }}/git/crates.io-index"
+cat &lt;&lt;EOT > ~/.cargo/config.toml
 [source.panamax-sparse]
 registry = "sparse+{{ host }}/index/"
+[source.panamax]
+registry = "{{ host }}/git/crates.io-index"
 
 [source.crates-io]
-# To use sparse index, change "panamax" to "panamax-sparse".
-replace-with = "panamax"
+# To use the git index instead, change "panamax-sparse" to "panamax".
+replace-with = "panamax-sparse"
 EOT</pre>
         </div>
         <p>Finally, run <code>rustup-init</code>, and you're done!</p>

@@ -1,1 +1,15 @@
-target
+# Deny everything by default
+*
+
+# Allow only what the Rust build needs
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!src/
+!static/
+!templates/
+
+# Re-deny common noise that might live inside src/
+**/.DS_Store
+**/*.swp
+**/target/
