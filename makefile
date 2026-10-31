@@ -1,17 +1,11 @@
-# Local mirror for trying panamax end to end: only the crates in LOCK, no rustup.
+# Local mirror for trying panamax end to end. OFFLINE=1 serves only the cache.
 LOCAL := .local/mirror
 LOCAL_PORT := 8282
 LOCK ?= Cargo.lock
 
-local: local-sync local-serve
-
-local-sync:
+local:
 	@test -f $(LOCAL)/mirror.toml || cargo run -q -- init --ignore-rustup $(LOCAL)
-	@sed -i.bak 's|^base_url = .*|base_url = "http://localhost:$(LOCAL_PORT)/crates"|' $(LOCAL)/mirror.toml && rm $(LOCAL)/mirror.toml.bak
-	cargo run -- sync $(LOCAL) --cargo-lock $(LOCK)
-
-local-serve:
-	cargo run -- serve $(LOCAL) --port $(LOCAL_PORT)
+	cargo run -- serve $(LOCAL) --port $(LOCAL_PORT) $(if $(OFFLINE),--offline)
 
 # fetch the crates in LOCK through the running local mirror, with a throwaway cargo home.
 # --config beats ~/.cargo/config.toml, which cargo also finds by walking up from here.

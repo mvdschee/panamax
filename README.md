@@ -2,7 +2,12 @@
 
 ![image](https://user-images.githubusercontent.com/1247908/132435079-b703bd5d-c139-4a73-818f-51746353b3ea.png)
 
-Panamax is a tool to mirror the Rust and crates.io repositories, for offline usage of `rustup` and `cargo`.
+Panamax mirrors `rustup` toolchains and a slim copy of crates.io, so you can keep building Rust, and rebuild infrastructure, when the internet goes down.
+
+- **rustup:** toolchains are synced ahead of time with `panamax sync`.
+- **crates.io baseline:** `panamax sync` keeps every crate, but not every version. Per crate it keeps the newest version of each of the newest 3 semver lines, the newest that builds on each pinned toolchain, and everything those depend on. That's about 745k of 3.5M versions. Baseline versions are never deleted.
+- **Everything else:** `panamax serve` fetches any other version the first time `cargo` asks for it while crates.io is reachable, and keeps it until it goes unused for 180 days.
+- **Offline:** the index served to `cargo` only lists versions on disk, so `cargo` only ever resolves versions that will download.
 
 This is a fork of [panamax-rs/panamax](https://github.com/panamax-rs/panamax), which is no longer actively maintained.
 
@@ -37,22 +42,17 @@ In Panamax, mirrors consist of self-contained directories. To create a mirror di
 ```
 $ panamax init my-mirror
 Successfully created mirror base at `my-mirror`.
-Make any desired changes to my-mirror/mirror.toml, then run panamax sync my-mirror.
 ```
 
-There will now be a `my-mirror` directory in your current directory.
+Use `--ignore-rustup` to skip the rustup half and only run the crate cache.
 
 ### Modify mirror.toml
 
-Within the directory, you'll find a `mirror.toml` file. This file contains the full configuration of the mirror, and while it has sane defaults, you should ensure the values are set to what you want.
-
-The other important parameter to set is the `base_url` within the `[crates]` section. After `cargo` fetches the index, it will try to use this URL to actually download the crates. It's important this value is accurate, or `cargo` may not work with the mirror.
-
-You can modify `mirror.toml` at any point in time, even after the mirror is synchronized.
+Within the directory, you'll find a `mirror.toml` file with the rustup settings: which channels, platforms and pinned versions to keep. The `pinned_rust_versions` toolchains also decide which crate versions count as "builds on this toolchain" for the baseline. Under `[crates]`, `sync = false` turns off the baseline for a cache-only mirror.
 
 ### Sync
 
-Once you have made the changes to `mirror.toml`, it is time to synchronize your mirror!
+`panamax sync` downloads the rustup toolchains, then updates the crates baseline:
 
 ```
 $ panamax sync my-mirror
@@ -63,54 +63,28 @@ Syncing Rustup repositories...
 [4/5] Syncing latest nightly...    ████████████████████████████████████████████████████████████ 546/546 [00:08:56]
 [5/5] Cleaning old files...        ████████████████████████████████████████████████████████████ 546/546 [00:00:00]
 Syncing Rustup repositories complete!
-Syncing Crates repositories...
-[1/3] Fetching crates.io-index...  ██████████████████████████████████████████████████████████ 1615/1615 [00:00:02]
-[2/3] Syncing crates files...      ██████████████████████████████████████████████████████████ 6357/6357 [00:00:05]
-[3/3] Syncing index and config...
-Syncing Crates repositories complete!
 Sync complete.
 ```
 
-Once this is step completes (without download errors), you will now have a full, synchronized copy of all the files needed to use `rustup` and `cargo` to their full potential!
+The crates baseline uses a shallow checkout of the crates.io git index (`crates.io-index/`, about 400 MB of git data). Computing it takes about 1 GB of memory. It downloads kept versions that are missing, then deletes files that are outside the baseline and haven't been used for 180 days.
 
-This directory can now be copied to a USB or rsync'd somewhere else, or even used in place - perfect for long plane trips!
+- `--dry-run` reports what would be downloaded and deleted, and changes nothing except the index checkout.
+- A run refuses to delete more than 10% of all crate files unless you pass `--allow-mass-delete`.
 
-Additionally, this mirror can continually by synchronized in the future - one recommendation is to run this command in a cronjob once each night, to keep the mirror reasonably up to date.
-
-### Sync Select Dependencies
-Optionally, panamax can be told to only grab crates needed to build a singular project.
-`cargo vendor` is used to create a folder with all needed dependencies,
-then a panamax command can parse the created directory and only grab those crates and versions.
-```
-# Only grab crates needed for panamax, as an example
-$ cargo vendor
-$ panamax sync my-mirror --vendor-path vendor
-```
-
-A `Cargo.lock` works as well, without vendoring first:
-```
-$ panamax sync my-mirror --cargo-lock Cargo.lock
-```
+Run it in a nightly cronjob.
 
 ## Server
-
-Panamax provides a warp-based HTTP(S) server that can handle serving a Rust mirror fast and at scale. This is the recommended way to serve the mirror.
 
 ```
 $ panamax serve my-mirror
 Running HTTP on [::]:8080
 ```
 
-The server's index page provides all the instructions needed on how to set up a Rust client that uses this mirror.
+This serves the rustup mirror and the crate cache. The index page explains how to set up a client.
 
-To serve over HTTPS, pass a certificate and key. The default port then becomes 8443:
+Pass `--offline` to never contact crates.io and serve only what is cached, for example to test that your projects still build without internet.
 
-```
-$ panamax serve my-mirror --cert-path cert.pem --key-path key.pem
-Running TLS on [::]:8443
-```
-
-If you would prefer having these instructions elsewhere, the rest of this README will describe the setup process in more detail.
+The server speaks plain HTTP. For HTTPS, put it behind a reverse proxy. The download URL in `index/config.json` is built from the request's `Host` and `X-Forwarded-Proto` headers, so the proxy must pass both.
 
 ## Configuring `rustup` and `cargo`
 
@@ -146,13 +120,11 @@ This will let you install `rustup` the similarly following the steps from https:
 `Cargo` also needs to be configured to point to the mirror. This can be done by adding the following lines to `~/.cargo/config.toml` (creating the file if it doesn't exist):
 
 ```
-[source.my-mirror]
+[source.panamax]
 registry = "sparse+http://panamax.internal/index/"
 [source.crates-io]
-replace-with = "my-mirror"
+replace-with = "panamax"
 ```
-
-This uses the sparse index, which is cargo's default protocol. To use the git index instead, set `registry = "http://panamax.internal/git/crates.io-index"`.
 
 `Cargo` should now be pointing to the correct location to use the mirror.
 
@@ -169,25 +141,17 @@ This will install the grep-like `rg` tool (which is a great tool - props to burn
 
 ### Proxies
 
-If you need to run Panamax through a proxy, you will need to set your configuration options in two places.
-
-First, you'll need to set the environment variable `http_proxy` to something like `https://your.proxy:1234` (which can be http or https).
-
-Second, you'll need to set an http proxy in your `~/.gitconfig`, like so:
-
-```
-[http]
-    proxy = https://your.proxy:1234
-```
-
-With these two parameters set, Panamax should work through an HTTP proxy.
+If panamax itself has to reach the internet through a proxy, set `HTTPS_PROXY` (and `HTTP_PROXY`) to something like `http://your.proxy:1234` before running `sync` or `serve`.
 
 ## Development
 
 ```
-$ make check     # clippy, fmt and tests
-$ make dev       # serve ./.local/mirror, restarting on changes (needs watchexec)
-$ make release   # tag the version in Cargo.toml and push it, which publishes the image
+$ make check            # clippy, fmt and tests
+$ make local            # serve a crate cache in .local/mirror on port 8282
+$ make local OFFLINE=1  # the same, serving only what is cached
+$ make local-check      # fetch the crates in Cargo.lock through it, with a fresh cargo home
+$ make dev              # make local, restarting on code changes (needs watchexec)
+$ make release          # tag the version in Cargo.toml and push it, which publishes the image
 ```
 
 ## License

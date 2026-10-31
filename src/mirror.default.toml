@@ -98,31 +98,12 @@ download_dev = false
 
 
 [crates]
-# These are the configuration parameters for the crates.io half of the mirror.
-# This will download the crates.io-index, as well as the crates themselves.
-# Once downloaded, it will then (optionally) rewrite the config.json to point to your mirror.
+# crates.io in two halves:
+# - sync keeps a baseline: per crate, the newest version of each of its newest 3 semver
+#   lines, the newest that builds on each pinned_rust_versions toolchain, and whatever
+#   those depend on. Baseline versions are never deleted.
+# - serve fetches any other version on first use while crates.io is reachable, and serves
+#   only what is on disk when it isn't. Those are deleted after 180 days without use.
 
-
-# Perform crates synchronization. Set this to false if you only want to mirror rustup.
+# Download and prune the baseline on sync. Set to false for a cache-only mirror.
 sync = true
-
-
-# Number of downloads that can be ran in parallel.
-download_threads = 64
-
-
-# Where to download the crates from.
-# The default, "https://crates.io/api/v1/crates", will actually instead use the corresponding
-# url at https://static.crates.io in order to avoid a redirect and rate limiting
-source = "https://crates.io/api/v1/crates"
-
-
-# Where to clone the crates.io-index repository from.
-source_index = "https://github.com/rust-lang/crates.io-index"
-
-
-# URL where this mirror's crates directory can be accessed from.
-# Used for rewriting crates.io-index's config.json.
-# Remove this parameter to perform no rewriting.
-# If removed, the `panamax rewrite` command can be used later.
-base_url = "http://panamax.internal/crates"

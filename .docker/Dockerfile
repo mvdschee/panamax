@@ -27,14 +27,11 @@ RUN cargo build --release --locked ${CARGO_BUILD_EXTRA} \
   && strip target/release/panamax
 
 
-# Runtime: `serve` shells out to `git http-backend`, so git has to be here.
+# Runtime: CA certificates for HTTPS, and git for the shallow index checkout sync reads.
 FROM debian:trixie-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    git \
-    libssl3t64 \
+  && apt-get install -y --no-install-recommends ca-certificates git \
   && rm -rf /var/lib/apt/lists/* \
   && git config --system --add safe.directory '*'
 
