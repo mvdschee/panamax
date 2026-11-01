@@ -1212,7 +1212,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "panamax"
-version = "1.0.14"
+version = "2.0.0"
 dependencies = [
  "askama",
  "axum",
