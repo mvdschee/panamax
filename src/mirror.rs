@@ -161,11 +161,15 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 		.map(|v| v.iter().filter_map(|s| crate::core::models::keep::parse_rust(s)).collect())
 		.unwrap_or_default();
 
+	// rustup and crates are independent: a failure in one doesn't skip the other
+	let mut rustup_result = Ok(());
+	let mut crates_result = Ok(None);
+
 	if let Some(rustup) = mirror.rustup {
 		if dry_run {
 			eprintln!("Dry run, skipping rustup...");
 		} else if rustup.sync {
-			crate::rustup::sync(path, &mirror.mirror, &rustup, &user_agent).await?;
+			rustup_result = crate::rustup::sync(path, &mirror.mirror, &rustup, &user_agent).await;
 		} else {
 			eprintln!("Rustup sync is disabled, skipping...");
 		}
@@ -182,7 +186,13 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 		};
 		let store = crate::services::store::Store::new(path.to_path_buf());
 		let upstream = crate::services::upstream::Upstream::new(false);
-		let r = crate::core::handlers::sync::sync_crates(&store, &upstream, &opts).await?;
+		crates_result =
+			crate::core::handlers::sync::sync_crates(&store, &upstream, &opts).await.map(Some);
+	} else {
+		eprintln!("Crates sync is disabled, skipping...");
+	}
+
+	if let Ok(Some(r)) = &crates_result {
 		let verb = if dry_run {
 			"would "
 		} else {
@@ -200,13 +210,26 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 			r.deleted,
 			r.deleted_bytes as f64 / 1e9
 		);
-	} else {
-		eprintln!("Crates sync is disabled, skipping...");
 	}
 
-	eprintln!("Sync complete.");
-
-	Ok(())
+	match (rustup_result, crates_result) {
+		(Ok(()), Ok(_)) => {
+			eprintln!("Sync complete.");
+			Ok(())
+		},
+		(Err(e), Ok(_)) => {
+			eprintln!("Crates sync complete, rustup sync failed.");
+			Err(e)
+		},
+		(Ok(()), Err(e)) => {
+			eprintln!("Rustup sync complete, crates sync failed.");
+			Err(e.into())
+		},
+		(Err(rustup), Err(crates)) => {
+			eprintln!("Rustup sync failed: {rustup}");
+			Err(crates.into())
+		},
+	}
 }
 
 pub async fn serve(
