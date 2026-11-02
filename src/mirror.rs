@@ -210,6 +210,11 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 			r.deleted,
 			r.deleted_bytes as f64 / 1e9
 		);
+		if dry_run && r.mass_delete && !allow_mass_delete {
+			eprintln!(
+				"  that is over 10% of all crate files: a real run needs --allow-mass-delete"
+			);
+		}
 	}
 
 	match (rustup_result, crates_result) {
@@ -218,11 +223,11 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 			Ok(())
 		},
 		(Err(e), Ok(_)) => {
-			eprintln!("Crates sync complete, rustup sync failed.");
+			eprintln!("Rustup sync failed.");
 			Err(e)
 		},
 		(Ok(()), Err(e)) => {
-			eprintln!("Rustup sync complete, crates sync failed.");
+			eprintln!("Crates sync failed.");
 			Err(e.into())
 		},
 		(Err(rustup), Err(crates)) => {

@@ -32,6 +32,8 @@ pub struct Report {
 	pub failed: usize,
 	pub deleted: usize,
 	pub deleted_bytes: u64,
+	/// A real run would refuse this many deletions without `--allow-mass-delete`.
+	pub mass_delete: bool,
 }
 
 /// Make `crates/` hold the baseline: download kept versions that are missing, and
@@ -53,12 +55,14 @@ pub async fn sync_crates(
 	};
 	let mut report = plan.report;
 
-	check_mass_delete(plan.delete.len(), report.on_disk, opts.allow_mass_delete)?;
 	report.deleted = plan.delete.len();
 	report.deleted_bytes = plan.delete.iter().map(|f| f.size).sum();
+	report.mass_delete = check_mass_delete(report.deleted, report.on_disk, false).is_err();
+	// a dry run always reports; only a real run refuses
 	if opts.dry_run {
 		return Ok(report);
 	}
+	check_mass_delete(report.deleted, report.on_disk, opts.allow_mass_delete)?;
 
 	// download before deleting, so a failed run never leaves less than it found
 	let results: Vec<bool> = futures::stream::iter(plan.missing)
