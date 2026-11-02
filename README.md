@@ -1,6 +1,6 @@
 # Panamax
 
-![image](https://user-images.githubusercontent.com/1247908/132435079-b703bd5d-c139-4a73-818f-51746353b3ea.png)
+<p align="center"><img src="panamax.png" alt="" /></p>
 
 Panamax mirrors `rustup` toolchains and a slim copy of crates.io, so you can keep building Rust, and rebuild infrastructure, when the internet goes down.
 
@@ -44,7 +44,7 @@ $ panamax init my-mirror
 Successfully created mirror base at `my-mirror`.
 ```
 
-Use `--ignore-rustup` to skip the rustup half and only run the crate cache.
+Use `--ignore-rustup` to leave out rustup and mirror only crates.
 
 ### Modify mirror.toml
 
@@ -52,7 +52,7 @@ Within the directory, you'll find a `mirror.toml` file with the rustup settings:
 
 ### Sync
 
-`panamax sync` downloads the rustup toolchains, then updates the crates baseline:
+`panamax sync` downloads the rustup toolchains, then updates the crates baseline. The two run independently, so a rustup failure doesn't skip the crates:
 
 ```
 $ panamax sync my-mirror
@@ -68,8 +68,8 @@ Sync complete.
 
 The crates baseline uses a shallow checkout of the crates.io git index (`crates.io-index/`, about 400 MB of git data). Computing it takes about 1 GB of memory. It downloads kept versions that are missing, then deletes files that are outside the baseline and haven't been used for 180 days.
 
-- `--dry-run` reports what would be downloaded and deleted, and changes nothing except the index checkout.
-- A run refuses to delete more than 10% of all crate files unless you pass `--allow-mass-delete`.
+- `--dry-run` skips rustup and reports what the crates sync would download and delete. It changes nothing except the index checkout.
+- If a run would delete more than 10% of all crate files, it stops before downloading or deleting anything. Pass `--allow-mass-delete` to go ahead.
 
 Run it in a nightly cronjob.
 
@@ -92,18 +92,18 @@ Once you have a mirror server set up and running, it's time to tell your Rust co
 
 ### Setting environment variables
 
-In order to ensure `rustup` knows where to look for the Rust components, we need to set some environment variables. Assuming the mirror is hosted at http://panamax.internal/:
+`rustup` finds the mirror through two environment variables. Assuming the mirror is hosted at http://panamax.internal/:
 
 ```
 export RUSTUP_DIST_SERVER=http://panamax.internal
 export RUSTUP_UPDATE_ROOT=http://panamax.internal/rustup
 ```
 
-These need to be set whenever `rustup` is used, so these should be added to your `.bashrc` file (or equivalent).
+`rustup` needs them every time it runs, so add them to your `.bashrc` (or equivalent).
 
 ### Installing `rustup`
 
-If you already have `rustup` installed, this step isn't necessary, however if you don't have access to https://rustup.rs, the mirror also contains the `rustup-init` files needed to install `rustup`.
+Skip this step if `rustup` is already installed. Without access to https://rustup.rs, you can install it from the `rustup-init` files on the mirror.
 
 Assuming the mirror is hosted at http://panamax.internal/, you will find the `rustup-init` files at http://panamax.internal/rustup/dist/. The `rustup-init` file you want depends on your architecture. Assuming you're running desktop Linux on a 64-bit machine:
 
@@ -113,11 +113,11 @@ chmod +x rustup-init
 ./rustup-init
 ```
 
-This will let you install `rustup` the similarly following the steps from https://rustup.rs. This will also let you use `rustup` to keep your Rust installation updated in the future.
+The installer works the same as the one from https://rustup.rs, and `rustup` then keeps your Rust installation updated through the mirror.
 
 ### Configuring `cargo`
 
-`Cargo` also needs to be configured to point to the mirror. This can be done by adding the following lines to `~/.cargo/config.toml` (creating the file if it doesn't exist):
+Point `cargo` at the mirror by adding these lines to `~/.cargo/config.toml` (create the file if it doesn't exist):
 
 ```
 [source.panamax]
@@ -126,18 +126,17 @@ registry = "sparse+http://panamax.internal/index/"
 replace-with = "panamax"
 ```
 
-`Cargo` should now be pointing to the correct location to use the mirror.
+`cargo` now fetches crates through the mirror.
 
 ### Testing configuration
 
-You've now set up a Rust mirror! In order to make sure everything is set up properly, you can run a simple test:
+To check that everything works:
 
 ```
 $ cargo install ripgrep
 ```
 
 This will install the grep-like `rg` tool (which is a great tool - props to burntsushi!). If `cargo` successfully downloads and builds everything, you have yourself a working mirror. Congratulations!
-
 
 ### Proxies
 

@@ -32,7 +32,7 @@ pub struct Report {
 	pub failed: usize,
 	pub deleted: usize,
 	pub deleted_bytes: u64,
-	/// A real run would refuse this many deletions without `--allow-mass-delete`.
+	/// Over the mass-delete limit: a real run stops here unless `--allow-mass-delete` is set.
 	pub mass_delete: bool,
 }
 
@@ -58,7 +58,7 @@ pub async fn sync_crates(
 	report.deleted = plan.delete.len();
 	report.deleted_bytes = plan.delete.iter().map(|f| f.size).sum();
 	report.mass_delete = check_mass_delete(report.deleted, report.on_disk, false).is_err();
-	// a dry run always reports; only a real run refuses
+	// a dry run always reports; only a real run stops at the limit
 	if opts.dry_run {
 		return Ok(report);
 	}
@@ -81,8 +81,8 @@ pub async fn sync_crates(
 	Ok(report)
 }
 
-/// A run that suddenly wants to delete a large share of the mirror is more likely a bug
-/// than intended, so it needs an explicit flag.
+/// A run that would delete a large share of the mirror is more likely a bug than intended,
+/// so it needs an explicit flag.
 fn check_mass_delete(delete: usize, total: usize, allowed: bool) -> Result<(), SyncError> {
 	if delete * 100 > total * MAX_DELETE_PERCENT && !allowed {
 		return Err(SyncError::MassDelete {
