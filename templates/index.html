@@ -25,12 +25,12 @@
 			<dt class="label">Index</dt>
 			<dd>
 				{% match index_synced %}
-				{% when Some(synced) %}<span id="crate-count">Reading…</span>, synced <time data-unix="{{ synced }}"></time>
+				{% when Some(synced) %}<span id="crate-count"></span>, synced <time data-unix="{{ synced }}"></time>
 				{% when None %}<span class="warn">Run panamax sync to get the index</span>
 				{% endmatch %}
 			</dd>
 			<dt class="label">Stored</dt>
-			<dd id="disk-totals">Counting…</dd>
+			<dd id="disk-totals"></dd>
 			{% if offline %}
 			<dt class="label">Offline</dt>
 			<dd class="warn">Offline mode. Serving only what's stored.</dd>
@@ -54,7 +54,7 @@
 		<section>
 			<p class="label section-label round">On this mirror</p>
 			<h2>Recently added or used</h2>
-			<div id="recent"><p class="note">Counting crate files…</p></div>
+			<div id="recent"></div>
 		</section>
 		<section>
 			<p class="label section-label triangle">Setup</p>

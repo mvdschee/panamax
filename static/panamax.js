@@ -78,27 +78,32 @@ function key(stored, notStored, out) {
 
 /* Views */
 
-/* Reading these walks the disk, so it starts only when the home view opens, once per page load. */
-const status = { index: null, disk: null };
+/* Sync writes this file, so reading it touches no crate files. */
+let status = null;
 
 function showStatus() {
-	status.index ??= fetchJson("api/status/index");
-	status.disk ??= fetchJson("api/status/disk");
+	status ??= fetchJson("api/status");
 	const fill = (id, text) => {
 		const el = document.getElementById(id);
 		if (el) el.textContent = text;
 	};
-	status.index.then(
-		({ crates }) => { indexRead = true; fill("crate-count", `${count(crates)} crates`); },
-		(error) => fill("crate-count", error.message));
-	status.disk.then(
-		(disk) => {
-			fill("disk-totals", `${count(disk.files)} crate files, ${bytes(disk.bytes)}`);
-			document.getElementById("recent")?.replaceChildren(recent(disk.recent));
+	const showRecent = (content) => document.getElementById("recent")?.replaceChildren(content);
+	status.then(
+		(found) => {
+			if (!found) {
+				fill("crate-count", "Not counted yet");
+				fill("disk-totals", "Not counted yet");
+				showRecent(h("p", { class: "note" }, "The next panamax sync counts the crate files."));
+				return;
+			}
+			fill("crate-count", `${count(found.crates)} crates`);
+			fill("disk-totals", `${count(found.disk.files)} crate files, ${bytes(found.disk.bytes)}, counted ${ago(found.written)}`);
+			showRecent(recent(found.disk.recent));
 		},
 		(error) => {
+			fill("crate-count", "Unavailable");
 			fill("disk-totals", "Unavailable");
-			document.getElementById("recent")?.replaceChildren(h("p", { class: "note" }, error.message));
+			showRecent(h("p", { class: "note" }, error.message));
 		});
 }
 
@@ -162,13 +167,13 @@ function hit(krate) {
 				withdrawn > 0 ? h("span", { class: "withdrawn", title: "crates.io calls this yanked" }, `${withdrawn} withdrawn`) : null)));
 }
 
-let indexRead = false;
-
 async function showSearch(q, stale) {
-	if (!indexRead) view.replaceChildren(h("p", { class: "note" }, "Reading the index…"));
 	const found = await fetchJson(`api/crates?q=${encodeURIComponent(q)}`);
-	indexRead = true;
 	if (stale()) return;
+	if (!found) {
+		view.replaceChildren(h("p", { class: "note" }, "Search starts working after the next panamax sync."));
+		return;
+	}
 	if (found.length === 0) {
 		view.replaceChildren(h("p", { class: "note" }, `No crate in the index has “${q}” in its name.`));
 		return;

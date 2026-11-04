@@ -5,26 +5,28 @@ use std::{
 
 use crate::{
 	core::models::{
-		catalog::{self, CachedFile, CrateDetail, CrateSummary, DiskStats},
+		catalog::{self, CachedFile, CrateDetail, CrateSummary, DiskStats, RecentFile, Status},
 		index,
 	},
-	services::store::{CrateFile, Store},
+	services::store::Store,
 };
 
-/// Crates matching `query`. `names` are the index names from `Store::checkout_names`.
+/// Crates matching `query`. None before the first sync has written the names.
 pub async fn search(
 	store: &Store,
-	names: &[String],
 	query: &str,
 	limit: usize,
-) -> io::Result<Vec<CrateSummary>> {
+) -> io::Result<Option<Vec<CrateSummary>>> {
+	let Some(names) = store.read_names().await? else {
+		return Ok(None);
+	};
 	let mut out = vec![];
-	for name in catalog::rank(names, query, limit) {
+	for name in catalog::rank(&names, query, limit) {
 		if let Some(found) = crate_detail(store, name).await? {
 			out.push(found.into());
 		}
 	}
-	Ok(out)
+	Ok(Some(out))
 }
 
 /// One crate as the index checkout describes it, with what the mirror holds of it.
@@ -45,13 +47,38 @@ pub async fn crate_detail(store: &Store, name: &str) -> io::Result<Option<CrateD
 	}))
 }
 
+/// Write what the web page reads, so that serving it never walks the mirror. Sync calls
+/// this after changing the checkout and the crate files. Walks both.
+pub async fn write_status(store: &Store, recent: usize) -> io::Result<()> {
+	let names = {
+		let store = store.clone();
+		tokio::task::spawn_blocking(move || store.checkout_names()).await??
+	};
+	let status = Status {
+		written: unix_secs(SystemTime::now()),
+		crates: names.len(),
+		disk: disk_stats(store, recent).await?,
+	};
+	store.write_names(&names.join("\n")).await?;
+	store.write_status(&serde_json::to_vec(&status)?).await
+}
+
 /// Totals for every crate file on disk. Walks the whole store.
-pub async fn disk_stats(store: &Store, recent: usize) -> io::Result<DiskStats> {
-	let files = store.crates().await?.into_iter().map(|f: CrateFile| {
-		let used = unix_secs(f.last_used);
-		(f.name, f.vers, f.size, used)
-	});
-	Ok(catalog::disk_stats(files, recent))
+async fn disk_stats(store: &Store, recent: usize) -> io::Result<DiskStats> {
+	let store = store.clone();
+	tokio::task::spawn_blocking(move || {
+		let mut stats = DiskStats::default();
+		store.each_crate(|f| {
+			let file = RecentFile {
+				last_used: unix_secs(f.last_used),
+				name: f.name,
+				vers: f.vers,
+			};
+			stats.add(file, f.size, recent);
+		})?;
+		Ok(stats)
+	})
+	.await?
 }
 
 pub fn unix_secs(time: SystemTime) -> u64 {
@@ -81,14 +108,16 @@ mod tests {
 		std::fs::write(checkout.join("3/i/inf"), file("inf", &["1.0.0"])).unwrap();
 		store.write_crate("Inflector", "0.11.3", b"x").await.unwrap();
 
-		let names = store.checkout_names().unwrap();
+		assert_eq!(search(&store, "inf", 10).await.unwrap(), None);
+		write_status(&store, 10).await.unwrap();
+
 		let state = |vers: &str, cached| VersionState {
 			vers: vers.into(),
 			yanked: false,
 			cached,
 		};
 		assert_eq!(
-			search(&store, &names, "inf", 10).await.unwrap(),
+			search(&store, "inf", 10).await.unwrap().unwrap(),
 			[
 				CrateSummary {
 					name: "inf".into(),
@@ -109,6 +138,28 @@ mod tests {
 		let root = tempfile::tempdir().unwrap();
 		let store = Store::new(root.path().to_path_buf());
 		assert_eq!(crate_detail(&store, "serde").await.unwrap(), None);
+	}
+
+	#[tokio::test]
+	async fn write_status_records_what_the_home_page_shows() {
+		let root = tempfile::tempdir().unwrap();
+		let store = Store::new(root.path().to_path_buf());
+		assert_eq!(store.read_status().await.unwrap(), None);
+
+		let checkout = store.checkout_dir().join("se/rd");
+		std::fs::create_dir_all(&checkout).unwrap();
+		std::fs::write(checkout.join("serde"), "").unwrap();
+		store.write_crate("serde", "1.0.0", b"xy").await.unwrap();
+		write_status(&store, 12).await.unwrap();
+
+		let status = store.read_status().await.unwrap().unwrap();
+		let status: serde_json::Value = serde_json::from_slice(&status).unwrap();
+		assert_eq!(status["crates"], 1);
+		assert_eq!(status["disk"]["files"], 1);
+		assert_eq!(status["disk"]["bytes"], 2);
+		assert_eq!(status["disk"]["recent"][0]["name"], "serde");
+		assert!(status["written"].as_u64().unwrap() > 0);
+		assert_eq!(store.read_names().await.unwrap().as_deref(), Some("serde"));
 	}
 
 	#[tokio::test]

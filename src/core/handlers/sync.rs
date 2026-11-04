@@ -3,9 +3,9 @@ use std::{collections::HashSet, time::SystemTime};
 use futures::StreamExt;
 
 use crate::{
-	config::{KEEP_UNUSED, MAX_DELETE_PERCENT, SYNC_DOWNLOADS, UPSTREAM_INDEX_GIT},
+	config::{KEEP_UNUSED, MAX_DELETE_PERCENT, RECENT_LIMIT, SYNC_DOWNLOADS, UPSTREAM_INDEX_GIT},
 	core::{
-		handlers::cache,
+		handlers::{cache, catalog},
 		models::{
 			index,
 			keep::{self, RustVersion},
@@ -77,6 +77,11 @@ pub async fn sync_crates(
 		if let Err(e) = store.remove(&file.path).await {
 			warn!("deleting {} failed: {e}", file.path.display());
 		}
+	}
+
+	// the mirror itself is in order by now, so this only leaves the page out of date
+	if let Err(e) = catalog::write_status(store, RECENT_LIMIT).await {
+		warn!("writing the web page's status failed: {e}");
 	}
 	Ok(report)
 }

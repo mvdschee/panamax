@@ -12,6 +12,7 @@ use walkdir::WalkDir;
 /// - `crates.io-index/`: shallow git checkout of the full index, used by sync
 /// - `index/<sparse path>`: last copy of each upstream index file served online
 /// - `crates/<prefix>/<name>/<vers>/<name>-<vers>.crate`: the crates themselves
+/// - `crate-names.txt`, `status.json`: what the web page reads, written by sync
 #[derive(Clone)]
 pub struct Store {
 	root: PathBuf,
@@ -105,6 +106,26 @@ impl Store {
 			}
 		}
 		Ok(out)
+	}
+
+	/// Crate names from the last sync, one per line. None before the first one.
+	pub async fn read_names(&self) -> io::Result<Option<String>> {
+		read_optional(&self.root.join("crate-names.txt"))
+			.await
+			.map(|data| data.and_then(|d| String::from_utf8(d).ok()))
+	}
+
+	pub async fn write_names(&self, names: &str) -> io::Result<()> {
+		write_atomic(&self.root.join("crate-names.txt"), names.as_bytes()).await
+	}
+
+	/// The JSON the web page's home view shows. None before the first sync.
+	pub async fn read_status(&self) -> io::Result<Option<Vec<u8>>> {
+		read_optional(&self.root.join("status.json")).await
+	}
+
+	pub async fn write_status(&self, json: &[u8]) -> io::Result<()> {
+		write_atomic(&self.root.join("status.json"), json).await
 	}
 
 	/// Uses the same layout as the old panamax mirror, so an existing crates/ dir is reused.
@@ -202,36 +223,42 @@ impl Store {
 
 	/// Every crate file on disk.
 	pub async fn crates(&self) -> io::Result<Vec<CrateFile>> {
-		let dir = self.root.join("crates");
+		let store = self.clone();
 		tokio::task::spawn_blocking(move || {
 			let mut out = vec![];
-			if !dir.exists() {
-				return Ok(out);
-			}
-			for entry in WalkDir::new(dir) {
-				let entry = entry?;
-				if entry.file_type().is_file()
-					&& entry.path().extension().is_some_and(|e| e == "crate")
-				{
-					let meta = entry.metadata()?;
-					let path = entry.path();
-					// layout: .../<name>/<vers>/<name>-<vers>.crate
-					let mut dirs = path.ancestors().skip(1).filter_map(|p| p.file_name()?.to_str());
-					let (Some(vers), Some(name)) = (dirs.next(), dirs.next()) else {
-						continue;
-					};
-					out.push(CrateFile {
-						name: name.to_string(),
-						vers: vers.to_string(),
-						path: path.to_path_buf(),
-						last_used: meta.modified()?,
-						size: meta.len(),
-					});
-				}
-			}
+			store.each_crate(|file| out.push(file))?;
 			Ok(out)
 		})
 		.await?
+	}
+
+	/// Calls `f` with every crate file on disk, holding none of them. Blocking.
+	pub fn each_crate(&self, mut f: impl FnMut(CrateFile)) -> io::Result<()> {
+		let dir = self.root.join("crates");
+		if !dir.exists() {
+			return Ok(());
+		}
+		for entry in WalkDir::new(dir) {
+			let entry = entry?;
+			if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "crate")
+			{
+				let meta = entry.metadata()?;
+				let path = entry.path();
+				// layout: .../<name>/<vers>/<name>-<vers>.crate
+				let mut dirs = path.ancestors().skip(1).filter_map(|p| p.file_name()?.to_str());
+				let (Some(vers), Some(name)) = (dirs.next(), dirs.next()) else {
+					continue;
+				};
+				f(CrateFile {
+					name: name.to_string(),
+					vers: vers.to_string(),
+					path: path.to_path_buf(),
+					last_used: meta.modified()?,
+					size: meta.len(),
+				});
+			}
+		}
+		Ok(())
 	}
 
 	/// Remove a crate file, and its version directory if that is now empty.

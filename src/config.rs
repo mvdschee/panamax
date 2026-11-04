@@ -28,10 +28,6 @@ pub const RETRY_UPSTREAM_AFTER: Duration = Duration::from_secs(30);
 /// Whole-request limit for upstream, large enough for big crates on a slow line.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// How long the web page reuses crate names and disk totals before reading them again.
-/// Nothing reads them until someone opens the page.
-pub const CATALOG_MAX_AGE: Duration = Duration::from_secs(60 * 60);
-
 /// Most crates one search returns.
 pub const SEARCH_LIMIT: usize = 50;
 

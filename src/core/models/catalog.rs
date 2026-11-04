@@ -61,6 +61,16 @@ pub struct VersionState {
 	pub cached: bool,
 }
 
+/// What the home page shows. Sync writes it, so that opening the page reads no crate files.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Status {
+	/// Unix seconds.
+	pub written: u64,
+	/// Crates in the index.
+	pub crates: usize,
+	pub disk: DiskStats,
+}
+
 /// Totals for the crate files on disk.
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
 pub struct DiskStats {
@@ -133,15 +143,15 @@ impl From<CrateDetail> for CrateSummary {
 	}
 }
 
-/// Index names matching `query`, best first: exact match, then prefix, then substring,
+/// Names matching `query` from `names`, one per line, best first: exact match, then prefix, then substring,
 /// shorter names first within each. `-` and `_` match each other, as on crates.io.
-pub fn rank<'a>(names: &'a [String], query: &str, limit: usize) -> Vec<&'a str> {
+pub fn rank<'a>(names: &'a str, query: &str, limit: usize) -> Vec<&'a str> {
 	let query = normalize(query.trim());
 	if query.is_empty() {
 		return vec![];
 	}
 	let mut hits: Vec<(u8, &str)> = names
-		.iter()
+		.lines()
 		.filter_map(|name| {
 			let norm = normalize(name);
 			let tier = if norm == query {
@@ -153,7 +163,7 @@ pub fn rank<'a>(names: &'a [String], query: &str, limit: usize) -> Vec<&'a str> 
 			} else {
 				return None;
 			};
-			Some((tier, name.as_str()))
+			Some((tier, name))
 		})
 		.collect();
 	hits.sort_unstable_by_key(|&(tier, name)| (tier, name.len(), name));
@@ -208,32 +218,26 @@ pub fn detail(file: &str, cached: impl Fn(&str) -> Option<CachedFile>) -> Option
 	})
 }
 
-/// Totals over `(name, vers, size, last_used)` of every file on disk.
-pub fn disk_stats(
-	files: impl IntoIterator<Item = (String, String, u64, u64)>,
-	limit: usize,
-) -> DiskStats {
-	let mut stats = DiskStats::default();
-	for (name, vers, size, last_used) in files {
-		stats.files += 1;
-		stats.bytes += size;
-		stats.recent.push(RecentFile {
-			name,
-			vers,
-			last_used,
-		});
+impl DiskStats {
+	/// Count one file, keeping only the `limit` most recently used in `recent`, so the
+	/// memory this takes doesn't depend on how many files there are.
+	pub fn add(&mut self, file: RecentFile, size: u64, limit: usize) {
+		self.files += 1;
+		self.bytes += size;
+		let at = self.recent.partition_point(|f| f.last_used >= file.last_used);
+		if at < limit {
+			self.recent.insert(at, file);
+			self.recent.truncate(limit);
+		}
 	}
-	stats.recent.sort_unstable_by_key(|f| Reverse(f.last_used));
-	stats.recent.truncate(limit);
-	stats
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 
-	fn names(list: &[&str]) -> Vec<String> {
-		list.iter().map(|s| s.to_string()).collect()
+	fn names(list: &[&str]) -> String {
+		list.join("\n")
 	}
 
 	#[test]
@@ -355,12 +359,34 @@ mod tests {
 
 	#[test]
 	fn disk_stats_totals_all_and_lists_newest() {
-		let file =
-			|name: &str, size, last_used| (name.to_string(), "1.0.0".to_string(), size, last_used);
-		let stats = disk_stats([file("a", 1, 5), file("b", 2, 9), file("c", 4, 7)], 2);
+		let mut stats = DiskStats::default();
+		for (name, size, last_used) in [("a", 1, 5), ("b", 2, 9), ("c", 4, 7)] {
+			stats.add(recent_file(name, last_used), size, 2);
+		}
 		assert_eq!(stats.files, 3);
 		assert_eq!(stats.bytes, 7);
 		let recent: Vec<_> = stats.recent.iter().map(|f| f.name.as_str()).collect();
 		assert_eq!(recent, ["b", "c"]);
+	}
+
+	#[test]
+	fn disk_stats_memory_does_not_grow_with_the_file_count() {
+		let limit = 12;
+		let mut stats = DiskStats::default();
+		for last_used in 0..10_000 {
+			stats.add(recent_file("a", last_used), 1, limit);
+		}
+		assert_eq!(stats.files, 10_000);
+		assert_eq!(stats.recent.len(), limit);
+		assert!(stats.recent.capacity() <= limit * 2);
+		assert_eq!(stats.recent[0].last_used, 9_999);
+	}
+
+	fn recent_file(name: &str, last_used: u64) -> RecentFile {
+		RecentFile {
+			name: name.to_string(),
+			vers: "1.0.0".to_string(),
+			last_used,
+		}
 	}
 }

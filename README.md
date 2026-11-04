@@ -99,7 +99,7 @@ The page loads nothing from the internet, so it works offline. Its CSS, JS and f
 
 Search and crate pages read the index checkout, so they start working once `panamax sync` has updated the crates baseline. A cache-only mirror (`sync = false` under `[crates]`) has no checkout.
 
-Crate names and disk totals are read when someone opens the page, then reused for an hour. `cargo` and `rustup` traffic never triggers a read.
+`panamax sync` writes the crate names and disk totals to files, and the page reads those, so opening it never walks the mirror. Totals and the recently used list are as fresh as the last sync; the page shows when they were counted. Each search hit and crate page still reads its own crate live.
 
 ## Configuring `rustup` and `cargo`
 
