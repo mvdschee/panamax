@@ -8,6 +8,7 @@ Panamax mirrors `rustup` toolchains and a slim copy of crates.io, so you can kee
 - **crates.io baseline:** `panamax sync` keeps every crate, but not every version. Per crate it keeps the newest version of each of the newest 3 semver lines, the newest that builds on each pinned toolchain, and everything those depend on. That's about 745k of 3.5M versions. Baseline versions are never deleted.
 - **Everything else:** `panamax serve` fetches any other version the first time `cargo` asks for it while crates.io is reachable, and keeps it until it goes unused for 180 days.
 - **Offline:** the index served to `cargo` only lists versions on disk, so `cargo` only ever resolves versions that will download.
+- **Web page:** `panamax serve` also serves a [page](#web-page) to search the index, see which versions are stored, and copy the client setup.
 
 This is a fork of [panamax-rs/panamax](https://github.com/panamax-rs/panamax), which is no longer actively maintained.
 
@@ -41,7 +42,7 @@ In Panamax, mirrors consist of self-contained directories. To create a mirror di
 
 ```
 $ panamax init my-mirror
-Successfully created mirror base at `my-mirror`.
+20:25:29.553 04-11-26 [INFO] Successfully created mirror base at `my-mirror`.
 ```
 
 Use `--ignore-rustup` to leave out rustup and mirror only crates.
@@ -56,14 +57,14 @@ Within the directory, you'll find a `mirror.toml` file with the rustup settings:
 
 ```
 $ panamax sync my-mirror
-Syncing Rustup repositories...
+20:25:29.553 04-11-26 [INFO] Syncing Rustup repositories...
 [1/5] Syncing rustup-init files... ██████████████████████████████████████████████████████████████ 27/27 [00:00:06]
 [2/5] Syncing latest stable...     ████████████████████████████████████████████████████████████ 602/602 [00:09:02]
 [3/5] Syncing latest beta...       ████████████████████████████████████████████████████████████ 524/524 [00:07:29]
 [4/5] Syncing latest nightly...    ████████████████████████████████████████████████████████████ 546/546 [00:08:56]
 [5/5] Cleaning old files...        ████████████████████████████████████████████████████████████ 546/546 [00:00:00]
-Syncing Rustup repositories complete!
-Sync complete.
+21:01:04.118 04-11-26 [INFO] Syncing Rustup repositories complete!
+21:01:04.119 04-11-26 [INFO] Sync complete.
 ```
 
 The crates baseline uses a shallow checkout of the crates.io git index (`crates.io-index/`, about 400 MB of git data). Computing it takes about 1 GB of memory. It downloads kept versions that are missing, then deletes files that are outside the baseline and haven't been used for 180 days.
@@ -77,18 +78,32 @@ Run it in a nightly cronjob.
 
 ```
 $ panamax serve my-mirror
-Running HTTP on [::]:8080
+20:25:29.584 04-11-26 [INFO] Running on http://localhost:8080
 ```
 
-This serves the rustup mirror and the crate cache. The index page explains how to set up a client.
+This serves the rustup mirror, the crate cache and a web page.
 
 Pass `--offline` to never contact crates.io and serve only what is cached, for example to test that your projects still build without internet.
 
 The server speaks plain HTTP. For HTTPS, put it behind a reverse proxy. The download URL in `index/config.json` is built from the request's `Host` and `X-Forwarded-Proto` headers, so the proxy must pass both.
 
+### Web page
+
+<p align="center"><img src="panamax-ui.png" alt="The Panamax home page: index and storage totals, a crate search box, recently used crates and the client setup commands." /></p>
+
+Open the server's address in a browser. The home page shows the index and storage totals, the crates most recently added or used, and the commands to point `rustup` and `cargo` at this mirror, with its address already filled in.
+
+Search finds crates by name. A crate page lists every version in the index, grouped by compatibility line and marked as stored here, not stored, or withdrawn by the author (yanked). Each version shows its release date, minimum Rust version, dependencies and features, plus a download button when it's stored.
+
+The page loads nothing from the internet, so it works offline. Its CSS, JS and fonts are built into the binary, and the data comes from the index checkout and the crate files. Descriptions and READMEs live inside `.crate` files, so the page links to crates.io and docs.rs for those.
+
+Search and crate pages read the index checkout, so they start working once `panamax sync` has updated the crates baseline. A cache-only mirror (`sync = false` under `[crates]`) has no checkout.
+
+Crate names and disk totals are read when someone opens the page, then reused for an hour. `cargo` and `rustup` traffic never triggers a read.
+
 ## Configuring `rustup` and `cargo`
 
-Once you have a mirror server set up and running, it's time to tell your Rust components to use it.
+Once you have a mirror server set up and running, it's time to tell your Rust components to use it. The [web page](#web-page) has these same commands with the mirror's address filled in.
 
 ### Setting environment variables
 
@@ -158,6 +173,8 @@ $ make release          # tag the version in Cargo.toml and push it, which publi
 Licensed under the terms of the MIT license and the Apache License (Version 2.0)
 
 See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) for details.
+
+The fonts in `static/fonts` are under the SIL Open Font License, with each license file next to them.
 
 ### Contribution
 
