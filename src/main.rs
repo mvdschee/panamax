@@ -2,6 +2,9 @@
 use clap::Parser;
 use std::{net::IpAddr, path::PathBuf};
 
+#[macro_use]
+mod utils;
+
 mod config;
 mod core;
 mod download;
@@ -76,7 +79,6 @@ enum Panamax {
 
 #[tokio::main]
 async fn main() {
-	env_logger::init();
 	let opt = Panamax::parse();
 	match opt {
 		Panamax::Init {
@@ -100,7 +102,7 @@ async fn main() {
 		} => mirror::list_platforms(source, channel).await,
 	}
 	.unwrap_or_else(|e| {
-		eprintln!("Panamax command failed! {e}");
+		error!("Panamax command failed! {e}");
 		std::process::exit(1);
 	});
 }

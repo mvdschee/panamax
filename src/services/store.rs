@@ -80,9 +80,36 @@ impl Store {
 		Ok(())
 	}
 
+	/// Every crate name in the git checkout, lowercase as the index stores it. Blocking.
+	pub fn checkout_names(&self) -> io::Result<Vec<String>> {
+		let dir = self.checkout_dir();
+		let mut out = vec![];
+		if !dir.exists() {
+			return Ok(out);
+		}
+		let walk = WalkDir::new(&dir)
+			.into_iter()
+			.filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'));
+		for entry in walk {
+			let entry = entry?;
+			if !entry.file_type().is_file() {
+				continue;
+			}
+			let Some(name) = entry.file_name().to_str() else {
+				continue;
+			};
+			// only files at their sparse path, which skips README.md and config.json
+			let rel = entry.path().strip_prefix(&dir).ok().and_then(|p| p.to_str());
+			if Self::index_path(name).as_deref() == rel {
+				out.push(name.to_string());
+			}
+		}
+		Ok(out)
+	}
+
 	/// Uses the same layout as the old panamax mirror, so an existing crates/ dir is reused.
-	fn crate_path(&self, name: &str, vers: &str) -> Option<PathBuf> {
-		if !valid_name(name) || !valid_version(vers) {
+	fn crate_dir(&self, name: &str) -> Option<PathBuf> {
+		if !valid_name(name) {
 			return None;
 		}
 		let prefix = match name.len() {
@@ -91,14 +118,61 @@ impl Store {
 			3 => PathBuf::from("3").join(&name[..1]),
 			_ => PathBuf::from(&name[..2]).join(&name[2..4]),
 		};
-		Some(
-			self.root
-				.join("crates")
-				.join(prefix)
-				.join(name)
-				.join(vers)
-				.join(format!("{name}-{vers}.crate")),
-		)
+		Some(self.root.join("crates").join(prefix).join(name))
+	}
+
+	fn crate_path(&self, name: &str, vers: &str) -> Option<PathBuf> {
+		if !valid_version(vers) {
+			return None;
+		}
+		Some(self.crate_dir(name)?.join(vers).join(format!("{name}-{vers}.crate")))
+	}
+
+	/// Files of a crate on disk, in no particular order. `name` must have the published
+	/// case.
+	pub async fn cached_versions(&self, name: &str) -> io::Result<Vec<CrateFile>> {
+		let mut out = vec![];
+		let Some(dir) = self.crate_dir(name) else {
+			return Ok(out);
+		};
+		let mut entries = match fs::read_dir(&dir).await {
+			Ok(entries) => entries,
+			Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(out),
+			Err(e) => return Err(e),
+		};
+		while let Some(entry) = entries.next_entry().await? {
+			let Some(vers) = entry.file_name().to_str().map(String::from) else {
+				continue;
+			};
+			let Some(path) = self.crate_path(name, &vers) else {
+				continue;
+			};
+			let meta = match fs::metadata(&path).await {
+				Ok(meta) => meta,
+				Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+				Err(e) => return Err(e),
+			};
+			out.push(CrateFile {
+				name: name.to_string(),
+				vers,
+				path,
+				last_used: meta.modified()?,
+				size: meta.len(),
+			});
+		}
+		Ok(out)
+	}
+
+	/// When sync last fetched the index checkout. None before the first sync.
+	pub async fn index_synced(&self) -> Option<SystemTime> {
+		let git = self.checkout_dir().join(".git");
+		// the first clone leaves no FETCH_HEAD
+		for file in ["FETCH_HEAD", "HEAD"] {
+			if let Ok(meta) = fs::metadata(git.join(file)).await {
+				return meta.modified().ok();
+			}
+		}
+		None
 	}
 
 	pub fn has_crate(&self, name: &str, vers: &str) -> bool {
@@ -276,6 +350,58 @@ mod tests {
 		store.remove(&crates[0].path).await.unwrap();
 		assert!(!store.has_crate("serde", "1.0.0"));
 		assert!(store.crates().await.unwrap().is_empty());
+	}
+
+	#[tokio::test]
+	async fn cached_versions_lists_only_crate_files() {
+		let root = tempfile::tempdir().unwrap();
+		let store = Store::new(root.path().to_path_buf());
+		assert!(store.cached_versions("serde").await.unwrap().is_empty());
+
+		store.write_crate("serde", "1.0.0", b"x").await.unwrap();
+		store.write_crate("serde", "1.1.0", b"xy").await.unwrap();
+		std::fs::create_dir(root.path().join("crates/se/rd/serde/2.0.0")).unwrap();
+		let mut found: Vec<_> = store
+			.cached_versions("serde")
+			.await
+			.unwrap()
+			.into_iter()
+			.map(|f| (f.vers, f.size))
+			.collect();
+		found.sort();
+		assert_eq!(found, [("1.0.0".to_string(), 1), ("1.1.0".to_string(), 2)]);
+	}
+
+	#[tokio::test]
+	async fn index_synced_needs_a_checkout() {
+		let root = tempfile::tempdir().unwrap();
+		let store = Store::new(root.path().to_path_buf());
+		assert!(store.index_synced().await.is_none());
+
+		std::fs::create_dir_all(store.checkout_dir().join(".git")).unwrap();
+		std::fs::write(store.checkout_dir().join(".git/HEAD"), "").unwrap();
+		assert!(store.index_synced().await.is_some());
+	}
+
+	#[test]
+	fn checkout_names_skips_non_index_files() {
+		let root = tempfile::tempdir().unwrap();
+		let store = Store::new(root.path().to_path_buf());
+		assert!(store.checkout_names().unwrap().is_empty());
+
+		let dir = store.checkout_dir();
+		for path in ["se/rd/serde", "1/a", "3/a/abc"] {
+			std::fs::create_dir_all(dir.join(path).parent().unwrap()).unwrap();
+			std::fs::write(dir.join(path), "").unwrap();
+		}
+		std::fs::write(dir.join("README.md"), "").unwrap();
+		std::fs::write(dir.join("config.json"), "").unwrap();
+		std::fs::create_dir_all(dir.join(".git")).unwrap();
+		std::fs::write(dir.join(".git/HEAD"), "").unwrap();
+
+		let mut names = store.checkout_names().unwrap();
+		names.sort();
+		assert_eq!(names, ["a", "abc", "serde"]);
 	}
 
 	#[tokio::test]

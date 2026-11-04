@@ -105,11 +105,11 @@ pub fn load_mirror_toml(path: &Path) -> Result<Config, MirrorError> {
 pub fn init(path: &Path, ignore_rustup: bool) -> Result<(), MirrorError> {
 	create_mirror_directories(path, ignore_rustup)?;
 	if create_mirror_toml(path, ignore_rustup)? {
-		eprintln!("Successfully created mirror base at `{}`.", path.display());
+		info!("Successfully created mirror base at `{}`.", path.display());
 	} else {
-		eprintln!("Mirror base already exists at `{}`.", path.display());
+		info!("Mirror base already exists at `{}`.", path.display());
 	}
-	eprintln!(
+	info!(
 		"Make any desired changes to {}/mirror.toml, then run panamax sync {} for rustup, \
 		 and panamax serve {} for rustup and the crate cache.",
 		path.display(),
@@ -126,7 +126,7 @@ pub fn default_user_agent() -> String {
 
 pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result<(), MirrorError> {
 	if !path.join("mirror.toml").exists() {
-		eprintln!("Mirror base not found! Run panamax init {} first.", path.display());
+		error!("Mirror base not found! Run panamax init {} first.", path.display());
 		return Ok(());
 	}
 	let mirror = load_mirror_toml(path)?;
@@ -146,9 +146,9 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 	let user_agent = match HeaderValue::from_str(&user_agent_str) {
 		Ok(h) => h,
 		Err(e) => {
-			eprintln!("Your contact information contains invalid characters!");
-			eprintln!("It's recommended to use a URL or email address as contact information.");
-			eprintln!("{e:?}");
+			error!("Your contact information contains invalid characters!");
+			error!("It's recommended to use a URL or email address as contact information.");
+			error!("{e:?}");
 			return Ok(());
 		},
 	};
@@ -167,18 +167,18 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 
 	if let Some(rustup) = mirror.rustup {
 		if dry_run {
-			eprintln!("Dry run, skipping rustup...");
+			info!("Dry run, skipping rustup...");
 		} else if rustup.sync {
 			rustup_result = crate::rustup::sync(path, &mirror.mirror, &rustup, &user_agent).await;
 		} else {
-			eprintln!("Rustup sync is disabled, skipping...");
+			info!("Rustup sync is disabled, skipping...");
 		}
 	} else {
-		eprintln!("Rustup section missing, skipping...");
+		info!("Rustup section missing, skipping...");
 	}
 
 	if mirror.crates.is_some_and(|c| c.sync) {
-		eprintln!("{}", console::style("Syncing crates baseline...").bold());
+		info!("{}", console::style("Syncing crates baseline...").bold());
 		let opts = crate::core::handlers::sync::Options {
 			dry_run,
 			allow_mass_delete,
@@ -189,7 +189,7 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 		crates_result =
 			crate::core::handlers::sync::sync_crates(&store, &upstream, &opts).await.map(Some);
 	} else {
-		eprintln!("Crates sync is disabled, skipping...");
+		info!("Crates sync is disabled, skipping...");
 	}
 
 	if let Ok(Some(r)) = &crates_result {
@@ -198,40 +198,38 @@ pub async fn sync(path: &Path, dry_run: bool, allow_mass_delete: bool) -> Result
 		} else {
 			""
 		};
-		eprintln!("  releases in index:  {}", r.releases);
-		eprintln!("  kept (baseline):    {}", r.kept);
-		eprintln!("  crate files:        {}", r.on_disk);
-		eprintln!("  kept but missing:   {}", r.missing);
+		info!("  releases in index:  {}", r.releases);
+		info!("  kept (baseline):    {}", r.kept);
+		info!("  crate files:        {}", r.on_disk);
+		info!("  kept but missing:   {}", r.missing);
 		if !dry_run {
-			eprintln!("  downloaded:         {} ({} failed)", r.downloaded, r.failed);
+			info!("  downloaded:         {} ({} failed)", r.downloaded, r.failed);
 		}
-		eprintln!(
+		info!(
 			"  {verb}delete:  {:>11} ({:.1} GB, outside baseline and unused for 180 days)",
 			r.deleted,
 			r.deleted_bytes as f64 / 1e9
 		);
 		if dry_run && r.mass_delete && !allow_mass_delete {
-			eprintln!(
-				"  that is over 10% of all crate files: a real run needs --allow-mass-delete"
-			);
+			warn!("  that is over 10% of all crate files: a real run needs --allow-mass-delete");
 		}
 	}
 
 	match (rustup_result, crates_result) {
 		(Ok(()), Ok(_)) => {
-			eprintln!("Sync complete.");
+			info!("Sync complete.");
 			Ok(())
 		},
 		(Err(e), Ok(_)) => {
-			eprintln!("Rustup sync failed.");
+			error!("Rustup sync failed.");
 			Err(e)
 		},
 		(Ok(()), Err(e)) => {
-			eprintln!("Crates sync failed.");
+			error!("Crates sync failed.");
 			Err(e.into())
 		},
 		(Err(rustup), Err(crates)) => {
-			eprintln!("Rustup sync failed: {rustup}");
+			error!("Rustup sync failed: {rustup}");
 			Err(crates.into())
 		},
 	}

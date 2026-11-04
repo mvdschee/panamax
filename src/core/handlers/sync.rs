@@ -75,7 +75,7 @@ pub async fn sync_crates(
 
 	for file in &plan.delete {
 		if let Err(e) = store.remove(&file.path).await {
-			log::warn!("deleting {} failed: {e}", file.path.display());
+			warn!("deleting {} failed: {e}", file.path.display());
 		}
 	}
 	Ok(report)
@@ -113,7 +113,7 @@ fn plan(
 	let kept = keep::keep_set(&idx, toolchains);
 	let violations = keep::closure_violations(&idx, &kept);
 	for v in violations.iter().take(10) {
-		log::error!("closure violation: {v}");
+		error!("closure violation: {v}");
 	}
 	if !violations.is_empty() {
 		return Err(SyncError::ClosureViolations(violations.len()));
@@ -155,7 +155,7 @@ async fn download(store: &Store, upstream: &Upstream, name: String, vers: String
 	let cksum = match store.read_checkout_index(&name).await {
 		Ok(file) => file.and_then(|f| index::cksum(&f, &vers)),
 		Err(e) => {
-			log::warn!("reading index for {name} failed: {e}");
+			warn!("reading index for {name} failed: {e}");
 			None
 		},
 	};
@@ -166,13 +166,13 @@ async fn download(store: &Store, upstream: &Upstream, name: String, vers: String
 		Ok(Some(data)) => match store.write_crate(&name, &vers, &data).await {
 			Ok(()) => true,
 			Err(e) => {
-				log::warn!("writing {name} {vers} failed: {e}");
+				warn!("writing {name} {vers} failed: {e}");
 				false
 			},
 		},
 		Ok(None) => false,
 		Err(e) => {
-			log::warn!("{e}");
+			warn!("{e}");
 			false
 		},
 	}

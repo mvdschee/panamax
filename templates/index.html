@@ -1,30 +1,78 @@
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Panamax</title>
-    <link rel="stylesheet" href="static/css/normalize.css">
-    <link rel="stylesheet" href="static/css/rustup.css">
-    <link rel="stylesheet" href="static/css/panamax.css">
-    <script src="static/js/panamax.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panamax</title>
+<link rel="stylesheet" href="static/panamax.css">
+<script src="static/panamax.js" defer></script>
 </head>
 
-<body id="idx" onload="platform_change()">
-    <p id="pitch">
-        <em>Panamax</em> is a mirror for <br />
-        <a href="https://rustup.rs">rustup</a> and <a href="https://crates.io">crates.io</a>.
-    </p>
+<body data-view="home" data-host="{{ host }}" data-offline="{{ offline }}" data-search-limit="{{ search_limit }}">
+<script>if (/^#\/(search|crates)\/./.test(location.hash)) document.body.dataset.view = "inner"; /* no home header flash on inner routes */</script>
+<header class="masthead">
+	<div class="top">
+		<a class="wordmark" href="#/">PANAMAX</a>
+		<nav class="nav">
+			<span>{{ self.host_name() }}</span>
+			<a href="https://crates.io" target="_blank" rel="noopener noreferrer">crates.io ↗</a>
+			<a href="https://docs.rs" target="_blank" rel="noopener noreferrer">docs.rs ↗</a>
+		</nav>
+	</div>
+	<div class="hero">
+		<h1>Your crates, <span>served from this machine</span>.</h1>
+		<dl class="status">
+			<dt class="label">Index</dt>
+			<dd>
+				{% match index_synced %}
+				{% when Some(synced) %}<span id="crate-count">Reading…</span>, synced <time data-unix="{{ synced }}"></time>
+				{% when None %}<span class="warn">Run panamax sync to get the index</span>
+				{% endmatch %}
+			</dd>
+			<dt class="label">Stored</dt>
+			<dd id="disk-totals">Counting…</dd>
+			{% if offline %}
+			<dt class="label">Offline</dt>
+			<dd class="warn">Offline mode. Serving only what's stored.</dd>
+			{% else if upstream_down %}
+			<dt class="label">Offline</dt>
+			<dd class="warn">Can't reach crates.io. Serving only what's stored.</dd>
+			{% endif %}
+		</dl>
+	</div>
+	<label class="find">
+		<span class="label">Find a crate</span>
+		<input id="query" type="search" placeholder="Crate name, like serde or tokio" autocomplete="off" spellcheck="false">
+	</label>
+</header>
+<div class="bands" aria-hidden="true"></div>
 
-    <div id="platform-instructions-unix" class="instructions">
-        <p>First, configure <code>rustup</code> for Panamax:</p>
-        <div class="copy-container">
-            <pre>echo "export RUSTUP_DIST_SERVER={{ host }}" >> ~/.bashrc
+<main id="view" tabindex="-1"></main>
+
+<template id="home">
+	<div class="split">
+		<section>
+			<p class="label section-label round">On this mirror</p>
+			<h2>Recently added or used</h2>
+			<div id="recent"><p class="note">Counting crate files…</p></div>
+		</section>
+		<section>
+			<p class="label section-label triangle">Setup</p>
+			<h2>Use this mirror</h2>
+			<div class="step">
+				<h3>1. Point rustup at it</h3>
+				<div class="code">
+					<div class="code-bar"><span>~/.bashrc</span><button type="button" class="copy">Copy</button></div>
+					<pre>echo "export RUSTUP_DIST_SERVER={{ host }}" >> ~/.bashrc
 echo "export RUSTUP_UPDATE_ROOT={{ host }}/rustup" >> ~/.bashrc
-
 source ~/.bashrc</pre>
-        </div>
-        <p>Then, configure <code>cargo</code> for Panamax:</p>
-        <div class="copy-container">
-            <pre>mkdir -p ~/.cargo
-
+				</div>
+			</div>
+			<div class="step">
+				<h3>2. Point cargo at it</h3>
+				<div class="code">
+					<div class="code-bar"><span>~/.cargo/config.toml</span><button type="button" class="copy">Copy</button></div>
+					<pre>mkdir -p ~/.cargo
 cat &lt;&lt;EOT > ~/.cargo/config.toml
 [source.panamax]
 registry = "sparse+{{ host }}/index/"
@@ -32,17 +80,26 @@ registry = "sparse+{{ host }}/index/"
 [source.crates-io]
 replace-with = "panamax"
 EOT</pre>
-        </div>
-        <p>Finally, run <code>rustup-init</code>, and you're done!</p>
-        <select id="rustup-selected-platform" name="platform" onchange="platform_change()">
-            {% for platform in platforms %}<option value="{{ platform.is_exe }}">{{ platform.platform_triple }}</option>{% endfor %}
-        </select>
-
-        <div class="copy-container">
-            <pre id="rustup-text">wget <a href="{{ host }}/rustup/dist/(replace with selected platform)/rustup-init">{{ host }}/rustup/dist/(replace with selected platform)/rustup-init</a>
-chmod +x rustup-init
-./rustup-init</pre>
-        </div>
-    </div>
-    <div class="display-none" id="panamax-host">{{ host }}</div>
+				</div>
+			</div>
+			<div class="step">
+				<h3>3. Install rustup</h3>
+				{% if platforms.is_empty() %}
+				<p class="note">This mirror has no rustup-init yet. Set <code>sync = true</code> under <code>[rustup]</code> in mirror.toml, then run <code>panamax sync</code>.</p>
+				{% else %}
+				<div class="code">
+					<div class="code-bar">
+						<select id="platform" aria-label="Platform">
+							{% for platform in &platforms %}<option data-exe="{{ platform.is_exe }}">{{ platform.platform_triple }}</option>{% endfor %}
+						</select>
+						<button type="button" class="copy" id="rustup-copy">Copy</button>
+					</div>
+					<pre id="rustup-init"></pre>
+				</div>
+				{% endif %}
+			</div>
+		</section>
+	</div>
+</template>
 </body>
+</html>

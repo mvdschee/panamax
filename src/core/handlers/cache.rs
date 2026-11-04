@@ -28,7 +28,7 @@ pub async fn index_file(
 		Fetched::Found(body) => {
 			// a failed save only costs the offline copy; still serve it
 			if let Err(e) = store.write_index(name, &body).await {
-				log::warn!("saving index for {name} failed: {e}");
+				warn!("saving index for {name} failed: {e}");
 			}
 			Ok(Some(body.to_vec()))
 		},
@@ -60,7 +60,7 @@ pub async fn crate_file(
 	if let Some(data) = store.read_crate(name, vers).await? {
 		// a failed touch only shortens its life; still serve it
 		if let Err(e) = store.touch(name, vers).await {
-			log::warn!("marking {name} {vers} as used failed: {e}");
+			warn!("marking {name} {vers} as used failed: {e}");
 		}
 		return Ok(Some(data));
 	}
@@ -80,7 +80,7 @@ pub async fn crate_file(
 	if let Some(data) = &data
 		&& let Err(e) = store.write_crate(name, vers, data).await
 	{
-		log::warn!("caching {name} {vers} failed: {e}");
+		warn!("caching {name} {vers} failed: {e}");
 	}
 	Ok(data)
 }

@@ -329,7 +329,7 @@ pub async fn sync_rustup_init(
 				} => {},
 				_ => {
 					errors_occurred += 1;
-					eprintln!("Download failed: {e:?}");
+					error!("Download failed: {e:?}");
 				},
 			}
 		}
@@ -506,7 +506,7 @@ pub fn clean_old_files(
 
 	for f in files_to_delete {
 		if let Err(e) = fs::remove_file(path.join(&f)) {
-			eprintln!("Could not remove file {}: {:?}", f.to_string_lossy(), e);
+			warn!("Could not remove file {}: {:?}", f.to_string_lossy(), e);
 		}
 		pb.inc(1);
 	}
@@ -648,7 +648,7 @@ pub async fn sync_rustup_channel(
 				} => {},
 				_ => {
 					errors_occurred += 1;
-					eprintln!("Download failed: {e:?}");
+					error!("Download failed: {e:?}");
 				},
 			}
 		}
@@ -686,7 +686,7 @@ pub async fn sync(
                     1; // clean old files
 	let mut step = 0;
 
-	eprintln!("{}", style("Syncing Rustup repositories...").bold());
+	info!("{}", style("Syncing Rustup repositories...").bold());
 
 	// Mirror rustup-init
 	step += 1;
@@ -702,8 +702,8 @@ pub async fn sync(
 	)
 	.await
 	{
-		eprintln!("Downloading rustup init files failed: {e:?}");
-		eprintln!("You will need to sync again to finish this download.");
+		error!("Downloading rustup init files failed: {e:?}");
+		warn!("You will need to sync again to finish this download.");
 	}
 
 	let mut failures = false;
@@ -728,11 +728,11 @@ pub async fn sync(
 		.await
 		{
 			failures = true;
-			eprintln!("Downloading stable release failed: {e:?}");
-			eprintln!("You will need to sync again to finish this download.");
+			error!("Downloading stable release failed: {e:?}");
+			warn!("You will need to sync again to finish this download.");
 		}
 	} else {
-		eprintln!("{} Skipping syncing stable.", current_step_prefix(step, num_steps));
+		info!("{} Skipping syncing stable.", current_step_prefix(step, num_steps));
 	}
 
 	// Mirror beta
@@ -755,11 +755,11 @@ pub async fn sync(
 		.await
 		{
 			failures = true;
-			eprintln!("Downloading beta release failed: {e:?}");
-			eprintln!("You will need to sync again to finish this download.");
+			error!("Downloading beta release failed: {e:?}");
+			warn!("You will need to sync again to finish this download.");
 		}
 	} else {
-		eprintln!("{} Skipping syncing beta.", current_step_prefix(step, num_steps));
+		info!("{} Skipping syncing beta.", current_step_prefix(step, num_steps));
 	}
 
 	// Mirror nightly
@@ -782,11 +782,11 @@ pub async fn sync(
 		.await
 		{
 			failures = true;
-			eprintln!("Downloading nightly release failed: {e:?}");
-			eprintln!("You will need to sync again to finish this download.");
+			error!("Downloading nightly release failed: {e:?}");
+			warn!("You will need to sync again to finish this download.");
 		}
 	} else {
-		eprintln!("{} Skipping syncing nightly.", current_step_prefix(step, num_steps));
+		info!("{} Skipping syncing nightly.", current_step_prefix(step, num_steps));
 	}
 
 	// Mirror pinned rust versions
@@ -815,7 +815,7 @@ pub async fn sync(
 					..
 				}) = e
 				{
-					eprintln!(
+					error!(
 						"{} Pinned rust version {} could not be found.",
 						current_step_prefix(step, num_steps),
 						version
@@ -824,8 +824,8 @@ pub async fn sync(
 						"Pinned rust version {version} could not be found"
 					)));
 				} else {
-					eprintln!("Downloading pinned rust {version} failed: {e:?}");
-					eprintln!("You will need to sync again to finish this download.");
+					error!("Downloading pinned rust {version} failed: {e:?}");
+					warn!("You will need to sync again to finish this download.");
 				}
 			}
 		}
@@ -837,9 +837,9 @@ pub async fn sync(
 		&& rustup.keep_latest_betas.is_none()
 		&& rustup.keep_latest_nightlies.is_none()
 	{
-		eprintln!("{} Skipping cleaning files.", current_step_prefix(step, num_steps));
+		info!("{} Skipping cleaning files.", current_step_prefix(step, num_steps));
 	} else if failures {
-		eprintln!(
+		warn!(
 			"{} Skipping cleaning files due to download failures.",
 			current_step_prefix(step, num_steps)
 		);
@@ -853,12 +853,12 @@ pub async fn sync(
 			rustup.pinned_rust_versions.as_ref(),
 			prefix,
 		) {
-			eprintln!("Cleaning old files failed: {e:?}");
-			eprintln!("You may need to sync again to clean these files.");
+			error!("Cleaning old files failed: {e:?}");
+			warn!("You may need to sync again to clean these files.");
 		}
 	}
 
-	eprintln!("{}", style("Syncing Rustup repositories complete!").bold());
+	info!("{}", style("Syncing Rustup repositories complete!").bold());
 
 	Ok(())
 }

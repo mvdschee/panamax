@@ -56,6 +56,16 @@ impl Upstream {
 		}
 	}
 
+	/// True in offline mode, when upstream is never contacted.
+	pub fn is_offline(&self) -> bool {
+		self.client.is_none()
+	}
+
+	/// True while a recent network failure has upstream being skipped.
+	pub fn is_down(&self) -> bool {
+		now_millis() < self.down_until.load(Ordering::Relaxed)
+	}
+
 	/// An index file by its sparse path, e.g. `se/rd/serde`.
 	pub async fn index_file(&self, path: &str) -> Fetched {
 		self.get(&format!("{}/{path}", self.index_url)).await
@@ -75,7 +85,7 @@ impl Upstream {
 		let res = match client.get(url).send().await {
 			Ok(res) => res,
 			Err(e) => {
-				log::warn!(
+				warn!(
 					"upstream unreachable for {url}, skipping it for {}s: {e}",
 					RETRY_UPSTREAM_AFTER.as_secs()
 				);
@@ -88,13 +98,13 @@ impl Upstream {
 			StatusCode::OK => match res.bytes().await {
 				Ok(body) => Fetched::Found(body),
 				Err(e) => {
-					log::warn!("upstream body failed for {url}: {e}");
+					warn!("upstream body failed for {url}: {e}");
 					Fetched::Unreachable
 				},
 			},
 			StatusCode::NOT_FOUND | StatusCode::GONE => Fetched::NotFound,
 			status => {
-				log::warn!("upstream returned {status} for {url}");
+				warn!("upstream returned {status} for {url}");
 				Fetched::Unreachable
 			},
 		}
